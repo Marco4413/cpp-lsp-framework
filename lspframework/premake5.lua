@@ -71,7 +71,12 @@ project "lspframework"
    targetdir "%{prj.location}/%{cfg.buildcfg}"
 
    includedirs { "..", "%{prj.location}/generated" }
-   files { "../lsp/**.cpp", "../lsp/**.h" }
+   files {
+      "../lsp/**.cpp",
+      "../lsp/**.h",
+      "%{prj.location}/generated/**.cpp",
+      "%{prj.location}/generated/**.h"
+   }
    
    filter "toolset:clang"
       buildoptions { "-Wall", "-Wextra", "-Wpedantic" }
