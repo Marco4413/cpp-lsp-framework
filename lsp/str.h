@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstring> // strncmp
 #include <string>
 #include <vector>
 #include <iterator>
@@ -56,7 +57,7 @@ struct CaseInsensitiveEqual{
 #ifdef _MSC_VER
 		_strnicmp(s1.data(), s2.data(), s2.size()) == 0;
 #else
-		strncasecmp(s1.data(), s2.data(), s2.size()) == 0;
+		strncmp(s1.data(), s2.data(), s2.size()) == 0;
 #endif
 	}
 
