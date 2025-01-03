@@ -47,17 +47,29 @@ struct CaseInsensitiveHash{
 	}
 };
 
+inline int strnicmp(const char *s1, const char *s2, size_t maxCount)
+{
+	for(size_t i = 0; i < maxCount; ++i)
+	{
+		// Both have terminated
+		if(!s1[i] && !s2[i]) return 0;
+		// s1 terminated
+		else if(!s1[i]) return s2[i];
+		// s2 terminated
+		else if(!s2[i]) return s1[i];
+		int diff = tolower(s1[i]) - tolower(s2[i]);
+		if(diff) return diff;
+	}
+	return 0;
+}
+
 struct CaseInsensitiveEqual{
 	using is_transparent = void;
 
 	bool operator()(std::string_view s1, std::string_view s2) const
 	{
 		return s1.size() == s2.size() &&
-#ifdef _MSC_VER
-		_strnicmp(s1.data(), s2.data(), s2.size()) == 0;
-#else
-		strncasecmp(s1.data(), s2.data(), s2.size()) == 0;
-#endif
+			strnicmp(s1.data(), s2.data(), s2.size()) == 0;
 	}
 
 	std::size_t operator()(const char* s1, const char* s2) const
