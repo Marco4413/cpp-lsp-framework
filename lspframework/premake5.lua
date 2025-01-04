@@ -46,7 +46,7 @@ project "lspgen"
    filter "configurations:Debug"
       symbols "On"
 
-   filter { "configurations:Debug", "toolset:not msc" }
+   filter { "configurations:Debug", "action:not vs*", "toolset:not msc" }
       buildoptions {
          "-Wall", "-Wextra", "-Wpedantic",
          "-fsanitize=address,undefined",
@@ -94,7 +94,7 @@ project "lspframework"
    filter "configurations:Debug"
       symbols "On"
 
-   filter { "configurations:Debug", "toolset:not msc" }
+   filter { "configurations:Debug", "action:not vs*", "toolset:not msc" }
       buildoptions {
          "-Wall", "-Wextra", "-Wpedantic",
          "-fsanitize=address,undefined",
