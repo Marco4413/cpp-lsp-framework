@@ -90,8 +90,10 @@ project "lspframework"
    files {
       "../lsp/**.cpp",
       "../lsp/**.h",
-      "%{prj.location}/generated/**.cpp",
-      "%{prj.location}/generated/**.h"
+      "%{prj.location}/generated/lsp/messages.cpp",
+      "%{prj.location}/generated/lsp/messages.h",
+      "%{prj.location}/generated/lsp/types.cpp",
+      "%{prj.location}/generated/lsp/types.h"
    }
 
    filter "toolset:gcc or clang"
