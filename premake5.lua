@@ -3,6 +3,12 @@ print("WARNING: IF YOU SEE THIS MESSAGE AND YOU ARE TRYING TO INCLUDE THE LSPFRA
 print("      -> If so, make sure to include the lspframework folder instead.")
 term.popColor()
 
+newoption {
+   trigger = "lsp-use-sanitizers",
+   description = "Use sanitizers when building Debug",
+   category = "Build Options"
+}
+
 workspace "lspframework"
    configurations { "Debug", "Release" }
    startproject "lspgen"

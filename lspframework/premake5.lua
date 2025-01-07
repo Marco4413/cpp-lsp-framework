@@ -1,3 +1,9 @@
+-- newoption {
+--    trigger = "lsp-use-sanitizers",
+--    description = "Use sanitizers when building Debug",
+--    category = "Build Options"
+-- }
+
 project "lspgen"
    kind "ConsoleApp"
    language "C++"
@@ -30,10 +36,7 @@ project "lspgen"
       "{COPYFILE} %[../build/lspgen/types.h] %[../build/lspframework/generated/lsp/types.h]"
    }
    
-   filter "toolset:clang"
-      buildoptions { "-Wall", "-Wextra", "-Wpedantic" }
-
-   filter "toolset:gcc"
+   filter "toolset:gcc or clang"
       buildoptions { "-Wall", "-Wextra", "-Wpedantic" }
 
    filter "action:vs*"
@@ -43,18 +46,15 @@ project "lspgen"
    filter "toolset:msc"
       buildoptions { "/W4", "/bigobj" }
 
+   filter { "system:windows", "toolset:gcc or clang" }
+      buildoptions { "-Wa,-mbig-obj" }
+
    filter "configurations:Debug"
       symbols "On"
 
-   filter { "configurations:Debug", "action:not vs*", "toolset:not msc" }
-      buildoptions {
-         "-Wall", "-Wextra", "-Wpedantic",
-         "-fsanitize=address,undefined",
-         "-fno-omit-frame-pointer"
-      }
-      linkoptions {
-         "-fsanitize=address,undefined"
-      }
+   filter { "configurations:Debug", "options:lsp-use-sanitizers" }
+      buildoptions { "-fsanitize=address,undefined", "-fno-omit-frame-pointer" }
+      linkoptions  { "-fsanitize=address,undefined" }
 
    filter "configurations:Release"
       optimize "Speed"
@@ -77,11 +77,8 @@ project "lspframework"
       "%{prj.location}/generated/**.cpp",
       "%{prj.location}/generated/**.h"
    }
-   
-   filter "toolset:clang"
-      buildoptions { "-Wall", "-Wextra", "-Wpedantic" }
 
-   filter "toolset:gcc"
+   filter "toolset:gcc or clang"
       buildoptions { "-Wall", "-Wextra", "-Wpedantic" }
 
    filter "action:vs*"
@@ -91,18 +88,15 @@ project "lspframework"
    filter "toolset:msc"
       buildoptions { "/W4", "/bigobj" }
 
+   filter { "system:windows", "toolset:gcc or clang" }
+      buildoptions { "-Wa,-mbig-obj" }
+
    filter "configurations:Debug"
       symbols "On"
 
-   filter { "configurations:Debug", "action:not vs*", "toolset:not msc" }
-      buildoptions {
-         "-Wall", "-Wextra", "-Wpedantic",
-         "-fsanitize=address,undefined",
-         "-fno-omit-frame-pointer"
-      }
-      linkoptions {
-         "-fsanitize=address,undefined"
-      }
+   filter { "configurations:Debug", "options:lsp-use-sanitizers" }
+      buildoptions { "-fsanitize=address,undefined", "-fno-omit-frame-pointer" }
+      linkoptions  { "-fsanitize=address,undefined" }
 
    filter "configurations:Release"
       optimize "Speed"
