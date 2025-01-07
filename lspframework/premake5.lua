@@ -4,6 +4,29 @@
 --    category = "Build Options"
 -- }
 
+local function emit_lspgen_postbuildcommands()
+   -- You can't just switch on OS, msys2 has os=windows and gmake uses sh
+   if _ACTION:match("gmake.*") then
+      postbuildcommands {
+         "%[../build/lspgen/%{cfg.buildcfg}/lspgen] %[../lspgen/lspmetamodel.json]",
+         "mkdir -p %[../build/lspframework/generated/lsp]",
+         "cp -f %[../build/lspgen/messages.cpp] %[../build/lspframework/generated/lsp/messages.cpp]",
+         "cp -f %[../build/lspgen/messages.h] %[../build/lspframework/generated/lsp/messages.h]",
+         "cp -f %[../build/lspgen/types.cpp] %[../build/lspframework/generated/lsp/types.cpp]",
+         "cp -f %[../build/lspgen/types.h] %[../build/lspframework/generated/lsp/types.h]"
+      }
+   else
+      postbuildcommands {
+         "%[../build/lspgen/%{cfg.buildcfg}/lspgen] %[../lspgen/lspmetamodel.json]",
+         "{MKDIR} %[../build/lspframework/generated/lsp]",
+         "{COPYFILE} %[../build/lspgen/messages.cpp] %[../build/lspframework/generated/lsp/messages.cpp]",
+         "{COPYFILE} %[../build/lspgen/messages.h] %[../build/lspframework/generated/lsp/messages.h]",
+         "{COPYFILE} %[../build/lspgen/types.cpp] %[../build/lspframework/generated/lsp/types.cpp]",
+         "{COPYFILE} %[../build/lspgen/types.h] %[../build/lspframework/generated/lsp/types.h]"
+      }
+   end
+end
+
 project "lspgen"
    kind "ConsoleApp"
    language "C++"
@@ -27,14 +50,7 @@ project "lspgen"
       "../build/lspframework/generated/lsp/types.cpp",
       "../build/lspframework/generated/lsp/types.h"
    }
-   postbuildcommands {
-      "%[../build/lspgen/%{cfg.buildcfg}/lspgen] %[../lspgen/lspmetamodel.json]",
-      "{MKDIR} %[../build/lspframework/generated/lsp]",
-      "{COPYFILE} %[../build/lspgen/messages.cpp] %[../build/lspframework/generated/lsp/messages.cpp]",
-      "{COPYFILE} %[../build/lspgen/messages.h] %[../build/lspframework/generated/lsp/messages.h]",
-      "{COPYFILE} %[../build/lspgen/types.cpp] %[../build/lspframework/generated/lsp/types.cpp]",
-      "{COPYFILE} %[../build/lspgen/types.h] %[../build/lspframework/generated/lsp/types.h]"
-   }
+   emit_lspgen_postbuildcommands()
    
    filter "toolset:gcc or clang"
       buildoptions { "-Wall", "-Wextra", "-Wpedantic" }
