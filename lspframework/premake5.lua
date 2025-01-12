@@ -6,7 +6,7 @@
 
 local function emit_lspgen_postbuildcommands()
    -- You can't just switch on OS, msys2 has os=windows and gmake uses sh
-   if _ACTION:match("gmake.*") then
+   if _ACTION and _ACTION:match("gmake.*") then
       postbuildcommands {
          "%[../build/lspgen/%{cfg.buildcfg}/lspgen] %[../lspgen/lspmetamodel.json]",
          "mkdir -p %[../build/lspframework/generated/lsp]",
