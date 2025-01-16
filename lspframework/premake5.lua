@@ -58,6 +58,7 @@ project "lspgen"
    filter "action:vs*"
       warnings "Extra"
       externalwarnings "Extra"
+      buildoptions { "/bigobj" }
 
    filter "toolset:msc"
       buildoptions { "/W4", "/bigobj" }
@@ -102,6 +103,7 @@ project "lspframework"
    filter "action:vs*"
       warnings "Extra"
       externalwarnings "Extra"
+      buildoptions { "/bigobj" }
 
    filter "toolset:msc"
       buildoptions { "/W4", "/bigobj" }
