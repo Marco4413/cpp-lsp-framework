@@ -57,7 +57,7 @@ inline int strnicmp(const char *s1, const char *s2, size_t maxCount)
 		else if(!s1[i]) return s2[i];
 		// s2 terminated
 		else if(!s2[i]) return s1[i];
-		int diff = tolower(s1[i]) - tolower(s2[i]);
+		int diff = std::tolower(static_cast<unsigned char>(s1[i])) - std::tolower(static_cast<unsigned char>(s2[i]));
 		if(diff) return diff;
 	}
 	return 0;
