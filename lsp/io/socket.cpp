@@ -137,8 +137,15 @@ struct Socket::Impl{
 		hints.ai_protocol = IPPROTO_TCP;
 		addrinfo* addrInfoList = nullptr;
 
+		// NOTE: gai_strerror on Windows switches between gai_strerrorA and gai_strerrorW.
+		//       If gai_strerrorW is chosen, std::string + wchar_t* is not defined.
+		//       Which means gai_strerrorA is the one to be used here, hoping that it's UTF8-encoded.
 		if(auto status = getaddrinfo(address.c_str(), std::to_string(port).c_str(), &hints, &addrInfoList); status != 0)
+#ifdef LSP_SOCKET_POSIX
 			throwError(std::string("getaddrinfo: ") + gai_strerror(status));
+#elif defined(LSP_SOCKET_WIN32)
+			throwError(std::string("getaddrinfo: ") + gai_strerrorA(status));
+#endif
 
 		for(const auto* addr = addrInfoList; addr; addr = addr->ai_next)
 		{
