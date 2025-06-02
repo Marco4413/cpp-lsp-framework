@@ -80,8 +80,9 @@ Uri Uri::parse(std::string_view uriStr)
 
 	uri.insertScheme(scheme);
 
+	static_assert(sizeof(std::size_t) >= sizeof(std::uint16_t));
 	std::uint16_t nextComponentStart = schemeLen + 1;
-	const auto hasAuthority = uriStr.size() >= nextComponentStart + 2 &&
+	const auto hasAuthority = uriStr.size() >= static_cast<std::size_t>(nextComponentStart + 2) &&
 														uriStr[nextComponentStart] == '/' &&
 														uriStr[nextComponentStart + 1] == '/';
 
@@ -105,7 +106,8 @@ Uri Uri::parse(std::string_view uriStr)
 		nextComponentStart += pathLen;
 	}
 
-	const auto hasQuery = uriStr.size() >= nextComponentStart + 1 && uriStr[nextComponentStart] == '?';
+	static_assert(sizeof(std::size_t) >= sizeof(std::uint16_t));
+	const auto hasQuery = uriStr.size() >= static_cast<std::size_t>(nextComponentStart + 1) && uriStr[nextComponentStart] == '?';
 
 	if(hasQuery)
 	{
@@ -116,7 +118,8 @@ Uri Uri::parse(std::string_view uriStr)
 		nextComponentStart += queryLen;
 	}
 
-	const auto hasFragment = uriStr.size() >= nextComponentStart + 1 && uriStr[nextComponentStart] == '#';
+	static_assert(sizeof(std::size_t) >= sizeof(std::uint16_t));
+	const auto hasFragment = uriStr.size() >= static_cast<std::size_t>(nextComponentStart + 1) && uriStr[nextComponentStart] == '#';
 
 	if(hasFragment)
 	{
