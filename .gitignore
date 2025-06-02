@@ -3,3 +3,5 @@
 Makefile
 build/
 out/
+
+*.sln
