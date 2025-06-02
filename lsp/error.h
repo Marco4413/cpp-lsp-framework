@@ -1,69 +1,54 @@
 #pragma once
 
 #include <optional>
-#include <stdexcept>
-#include <lsp/types.h>
-#include <lsp/serialization.h>
+#include <lsp/exception.h>
+#include <lsp/json/json.h>
 
 namespace lsp{
-
-class ErrorCode{
-public:
-	ErrorCode(ErrorCodes code)
-		: m_code{code.value()}
-	{
-	}
-
-	ErrorCode(LSPErrorCodes code)
-		: m_code{code.value()}
-	{
-	}
-
-	auto value() const -> json::Integer{ return m_code; }
-	operator json::Integer() const{ return value(); }
-
-private:
-	json::Integer m_code;
-};
 
 /*
  * Generic base for request or response errors
  */
-class Error : public std::runtime_error{
+class Error : public Exception{
 public:
-	json::Integer code() const{ return m_code; }
-	const std::optional<json::Any>& data() const{ return m_data; }
+	const char* message() const noexcept{ return what(); }
+	int code() const noexcept{ return m_code; }
+	const std::optional<json::Any>& data() const noexcept{ return m_data; }
+
+	enum : int{
+		ParseError           = -32700,
+		InvalidRequest       = -32600,
+		MethodNotFound       = -32601,
+		InvalidParams        = -32602,
+		InternalError        = -32603,
+		ServerNotInitialized = -32002,
+		UnknownErrorCode     = -32001,
+		RequestFailed        = -32803,
+		ServerCancelled      = -32802,
+		ContentModified      = -32801,
+		RequestCancelled     = -32800
+	};
 
 protected:
-	Error(json::Integer code, const std::string& message, std::optional<json::Any> data = std::nullopt)
-		: std::runtime_error{message},
+	Error(int code, const std::string& message, std::optional<json::Any> data = {})
+		: Exception{message},
 		  m_code{code},
 		  m_data{std::move(data)}
 	{
 	}
 
 private:
-	json::Integer            m_code;
+	int                      m_code;
 	std::optional<json::Any> m_data;
 };
 
 /*
- * Thrown by the implementation if it encounters an error when processing a request
+ * Thrown from inside of a request handler callback and sent back as an error response
  */
 class RequestError : public Error{
 public:
-	RequestError(ErrorCodes code, const std::string& message)
-		: Error{code, message}
-	{
-	}
-	RequestError(LSPErrorCodes code, const std::string& message)
-		: Error{code, message}
-	{
-	}
-
-	template<typename ErrorCodeType, typename ErrorData>
-	RequestError(ErrorCodeType code, const std::string& message, ErrorData&& data)
-		: Error{ErrorCode{code}, message, toJson(std::forward<ErrorData>(data))}
+	RequestError(int code, const std::string& message, std::optional<json::Any> data = {})
+		: Error{code, message, std::move(data)}
 	{
 	}
 };
@@ -73,12 +58,7 @@ public:
  */
 class ResponseError : public Error{
 public:
-	ResponseError(ErrorCodes code, const std::string& message, std::optional<json::Any> data = std::nullopt)
-		: Error{code, message, std::move(data)}
-	{
-	}
-
-	ResponseError(LSPErrorCodes code, const std::string& message, std::optional<json::Any> data = std::nullopt)
+	ResponseError(int code, const std::string& message, std::optional<json::Any> data = {})
 		: Error{code, message, std::move(data)}
 	{
 	}

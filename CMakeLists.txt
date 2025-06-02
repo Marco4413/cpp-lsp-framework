@@ -24,26 +24,36 @@ else()
 	endif()
 endif()
 
-add_executable(lspgen lspgen/lspgen.cpp lsp/json/json.cpp lsp/str.cpp)
+if(WIN32)
+	add_definitions(-D_CRT_SECURE_NO_WARNINGS)
+endif()
+
+add_executable(lspgen lspgen/lspgen.cpp lsp/json/json.cpp)
 target_include_directories(lspgen PRIVATE .)
 
 set(LSP_SRC_DIR lsp/)
 
 set(LSP_HEADERS
 	# lsp
+	concepts.h
 	connection.h
+	enumeration.h
 	error.h
+	exception.h
 	fileuri.h
 	messagebase.h
-	messagedispatcher.h
 	messagehandler.h
 	nullable.h
-	requesthandler.h
+	process.h
+	requestresult.h
 	serialization.h
-	str.h
-	util.h
+	strmap.h
+	threadpool.h
+	uri.h
 	# io
+	io/socket.h
 	io/standardio.h
+	io/stream.h
 	# json
 	json/json.h
 	# jsonrpc
@@ -54,11 +64,13 @@ list(TRANSFORM LSP_HEADERS PREPEND ${LSP_SRC_DIR})
 set(LSP_SOURCES
 	# lsp
 	connection.cpp
-	messagedispatcher.cpp
-	requesthandler.cpp
-	str.cpp
 	fileuri.cpp
+	messagehandler.cpp
+	process.cpp
+	threadpool.cpp
+	uri.cpp
 	# io
+	io/socket.cpp
 	io/standardio.cpp
 	# json
 	json/json.cpp
@@ -77,10 +89,9 @@ set(LSP_GENERATED_HEADERS
 
 set(LSP_GENERATED_SOURCES
 	${LSP_GENERATED_FILES_DIR}/lsp/types.cpp
-	${LSP_GENERATED_FILES_DIR}/lsp/messages.cpp
 )
 
-set(LSP_METAMODEL_JSON ${CMAKE_CURRENT_SOURCE_DIR}/lspgen/lspmetamodel.json)
+set(LSP_METAMODEL_JSON ${CMAKE_CURRENT_SOURCE_DIR}/lspgen/metaModel.json)
 
 add_custom_command(
 	COMMAND lspgen ${LSP_METAMODEL_JSON}
@@ -93,3 +104,7 @@ add_custom_command(
 add_library(lsp STATIC)
 target_include_directories(lsp PUBLIC . ${LSP_GENERATED_FILES_DIR})
 target_sources(lsp PRIVATE ${LSP_HEADERS} ${LSP_SOURCES} ${LSP_GENERATED_HEADERS} ${LSP_GENERATED_SOURCES})
+
+if(WIN32)
+	target_link_libraries(lsp PUBLIC Ws2_32)
+endif()

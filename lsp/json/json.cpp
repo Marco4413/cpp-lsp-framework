@@ -1,19 +1,17 @@
-#include "json.h"
-
 #include <limits>
 #include <vector>
 #include <cassert>
 #include <string>
 #include <charconv>
 #include <algorithm>
-#include <lsp/str.h>
+#include <lsp/json/json.h>
 
 namespace lsp::json{
 namespace{
 
-constexpr std::string_view Null{"null"};
-constexpr std::string_view True{"true"};
-constexpr std::string_view False{"false"};
+constexpr std::string_view NullValueString{"null"};
+constexpr std::string_view TrueValueString{"true"};
+constexpr std::string_view FalseValueString{"false"};
 
 /*
  * Parser
@@ -230,7 +228,7 @@ private:
 		if(m_pos >= m_end || *m_pos != '\"')
 			throw ParseError{"String expected", textOffset(m_start, m_pos)};
 
-		const char* stringStart = ++m_pos;
+		const char* stringStart = m_pos++;
 
 		bool escaping = false;
 		while(*m_pos != '\"' || escaping)
@@ -246,9 +244,9 @@ private:
 				throw ParseError{"Unmatched '\"'", textOffset(m_start, m_pos)};
 		}
 
-		const char* stringEnd = m_pos++;
+		const char* stringEnd = ++m_pos;
 
-		return str::unescape(std::string_view{stringStart, stringEnd});
+		return fromStringLiteral(std::string_view{stringStart, stringEnd});
 	}
 
 	Any parseNumber()
@@ -294,18 +292,18 @@ private:
 		while(m_pos < m_end && std::isalnum(*m_pos))
 			++m_pos;
 
-		std::string_view id{ idStart, static_cast<std::size_t>(std::distance(idStart, m_pos)) };
+		auto identifier = std::string_view(idStart, m_pos);
 
-		if(id == True)
-			return true;
+		if(identifier == TrueValueString)
+			return Boolean(true);
 
-		if(id == False)
-			return false;
+		if(identifier == FalseValueString)
+			return Boolean(false);
 
-		if(id == Null)
-			return {};
+		if(identifier == NullValueString)
+			return Null();
 
-		throw ParseError{"Unexpected '" + std::string{idStart, m_pos} + "'", textOffset(m_start, m_pos)};
+		throw ParseError{"Unexpected '" + std::string(identifier) + "'", textOffset(m_start, m_pos)};
 	}
 
 	Any parseSimpleValue()
@@ -349,11 +347,11 @@ void stringifyImplementation(const Any& json, std::string& str, std::size_t inde
 
 	if(json.isNull())
 	{
-		str += Null;
+		str += NullValueString;
 	}
 	else if(json.isBoolean())
 	{
-		str += json.boolean() ? True : False;
+		str += json.boolean() ? TrueValueString : FalseValueString;
 	}
 	else if(json.isInteger())
 	{
@@ -375,7 +373,7 @@ void stringifyImplementation(const Any& json, std::string& str, std::size_t inde
 	}
 	else if(json.isString())
 	{
-		str += str::quote(str::escape(json.string()));
+		str += toStringLiteral(json.string());
 	}
 	else if(json.isObject())
 	{
@@ -388,7 +386,7 @@ void stringifyImplementation(const Any& json, std::string& str, std::size_t inde
 			str += listStart;
 			++indentLevel;
 			str += getIndent();
-			str += str::quote(str::escape(it->first));
+			str += toStringLiteral(it->first);
 			str += keySep;
 			stringifyImplementation(it->second, str, indentLevel, format);
 			++it;
@@ -397,7 +395,7 @@ void stringifyImplementation(const Any& json, std::string& str, std::size_t inde
 			{
 				str += valueSep;
 				str += getIndent();
-				str += str::quote(str::escape(it->first));
+				str += toStringLiteral(it->first);
 				str += keySep;
 				stringifyImplementation(it->second, str, indentLevel, format);
 				++it;
@@ -471,6 +469,111 @@ std::string stringify(const Any& json, bool format)
 	std::string str;
 	stringifyImplementation(json, str, 0, format);
 	return str;
+}
+
+std::string toStringLiteral(std::string_view str)
+{
+	std::string result;
+	result.reserve(str.size() + 2);
+	result += '\"';
+
+	for(const char c : str)
+	{
+		switch(c)
+		{
+		case '\0':
+			result += "\\0";
+			break;
+		case '\a':
+			result += "\\a";
+			break;
+		case '\b':
+			result += "\\b";
+			break;
+		case '\t':
+			result += "\\t";
+			break;
+		case '\n':
+			result += "\\n";
+			break;
+		case '\v':
+			result += "\\v";
+			break;
+		case '\f':
+			result += "\\f";
+			break;
+		case '\r':
+			result += "\\r";
+			break;
+		case '\"':
+			result += "\\\"";
+			break;
+		case '\\':
+			result += "\\\\";
+			break;
+		default:
+			result += c;
+		}
+	}
+
+	result += '\"';
+
+	return result;
+}
+
+std::string fromStringLiteral(std::string_view str)
+{
+	if(str.size() > 0 && str.front() == '\"')
+		str.remove_prefix(1);
+
+	if(str.size() > 0 && str.back() == '\"')
+		str.remove_suffix(1);
+
+	std::string result;
+	result.reserve(str.size());
+
+	for(std::size_t i = 0; i < str.size(); ++i)
+	{
+		if(str[i] == '\\' && i != str.size() - 1)
+		{
+			++i;
+			switch(str[i])
+			{
+			case '0':
+				result += '\0';
+				break;
+			case 'a':
+				result += '\a';
+				break;
+			case 'b':
+				result += '\b';
+				break;
+			case 't':
+				result += '\t';
+				break;
+			case 'n':
+				result += '\n';
+				break;
+			case 'v':
+				result += '\v';
+				break;
+			case 'f':
+				result += '\f';
+				break;
+			case 'r':
+				result += '\r';
+				break;
+			default:
+				result += str[i];
+			}
+		}
+		else
+		{
+			result += str[i];
+		}
+	}
+
+	return result;
 }
 
 } // namespace lsp::json

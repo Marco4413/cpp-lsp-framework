@@ -1,11 +1,12 @@
-#include "jsonrpc.h"
-
 #include <cassert>
 #include <iterator>
 #include <algorithm>
+#include <lsp/jsonrpc/jsonrpc.h>
 
 namespace lsp::jsonrpc{
 namespace{
+
+constexpr std::string_view ProtocolVersion{"2.0"};
 
 void verifyProtocolVersion(const json::Object& json)
 {
@@ -17,7 +18,7 @@ void verifyProtocolVersion(const json::Object& json)
 	if(!jsonrpc.isString())
 		throw ProtocolError{"jsonrpc property expected to be a string"};
 
-	if(jsonrpc.string() != "2.0")
+	if(jsonrpc.string() != ProtocolVersion)
 		throw ProtocolError{"Invalid or unsupported jsonrpc version"};
 }
 
@@ -40,7 +41,6 @@ Request requestFromJson(json::Object& json)
 	verifyProtocolVersion(json);
 
 	Request request;
-	request.jsonrpc = std::move(json.get("jsonrpc").string());
 	request.method = std::move(json.get("method").string());
 
 	if(json.contains("id"))
@@ -150,8 +150,7 @@ json::Object requestToJson(Request&& request)
 {
 	json::Object json;
 
-	assert(request.jsonrpc == "2.0");
-	json["jsonrpc"] = std::move(request.jsonrpc);
+	json["jsonrpc"] = std::string{ProtocolVersion};
 
 	if(request.id.has_value())
 		std::visit([&json](const auto& v){ json["id"] = std::move(v); }, *request.id);
@@ -166,11 +165,10 @@ json::Object requestToJson(Request&& request)
 
 json::Object responseToJson(Response&& response)
 {
-	assert(response.jsonrpc == "2.0");
 	assert(response.result.has_value() != response.error.has_value());
 
 	json::Object json;
-	json["jsonrpc"] = std::move(response.jsonrpc);
+	json["jsonrpc"] = std::string{ProtocolVersion};
 	std::visit([&json](const auto& v){ json["id"] = std::move(v); }, response.id);
 
 	if(response.result.has_value())

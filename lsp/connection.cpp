@@ -1,10 +1,10 @@
-#include "connection.h"
-
+#include <cstring>
 #include <charconv>
+#include <optional>
 #include <string_view>
-#include <lsp/str.h>
+#include <lsp/connection.h>
 #include <lsp/json/json.h>
-#include <lsp/jsonrpc/jsonrpc.h>
+#include <lsp/io/stream.h>
 
 #ifndef LSP_MESSAGE_DEBUG_LOG
 	#ifdef NDEBUG
@@ -41,161 +41,231 @@ void debugLogMessageJson([[maybe_unused]] const std::string& messageType, [[mayb
 }
 #endif
 
-} // namespace
-
-/*
- * Connection
- */
-
-Connection::Connection(std::istream& in, std::ostream& out)
-	: m_in{in},
-	  m_out{out}
+std::string_view trimStringView(std::string_view str)
 {
+	while(!str.empty() && std::isspace(static_cast<unsigned char>(str.front())))
+		str.remove_prefix(1);
+
+	while(!str.empty() && std::isspace(static_cast<unsigned char>(str.back())))
+		str.remove_suffix(1);
+
+	return str;
 }
 
-void Connection::receiveNextMessage(RequestHandlerInterface& requestHandler, ResponseHandlerInterface& responseHandler)
+void verifyContentType(std::string_view contentType)
 {
-	std::lock_guard lock{m_readMutex};
-
-	if(m_in.peek() == std::char_traits<char>::eof())
-		throw ConnectionError{"Connection lost"};
-
-	const auto header = readMessageHeader();
-
-	std::string content;
-	content.resize(header.contentLength);
-	m_in.read(&content[0], static_cast<std::streamsize>(header.contentLength));
-
-	// Verify only after reading the entire message so no partially unread message is left in the stream
-
-	std::string_view contentType{header.contentType};
-
 	if(!contentType.starts_with("application/vscode-jsonrpc"))
-		throw ProtocolError{"Unsupported or invalid content type: " + header.contentType};
+		throw ConnectionError{"Protocol: Unsupported or invalid content type: " + std::string(contentType)};
 
 	constexpr std::string_view charsetKey{"charset="};
 	if(const auto idx = contentType.find(charsetKey); idx != std::string_view::npos)
 	{
 		auto charset = contentType.substr(idx + charsetKey.size());
-		charset = str::trimView(charset.substr(0, charset.find(';')));
+		charset = trimStringView(charset.substr(0, charset.find(';')));
 
 		if(charset != "utf-8" && charset != "utf8")
-			throw ProtocolError{"Unsupported or invalid character encoding: " + std::string{charset}};
+			throw ConnectionError{"Protocol: Unsupported or invalid character encoding: " + std::string{charset}};
+	}
+}
+
+} // namespace
+
+/*
+ * Connection::InputReader
+ * Wrapper around io::Stream that allows for peeking and reading single chars
+ */
+
+class Connection::InputReader{
+public:
+	InputReader(io::Stream& stream)
+		: m_stream{stream}
+	{
 	}
 
+	char peek()
+	{
+		if(!m_peek.has_value())
+			m_peek = get();
+
+		return m_peek.value();
+	}
+
+	char get()
+	{
+		if(m_peek.has_value())
+		{
+			const char c = m_peek.value();
+			m_peek.reset();
+			return c;
+		}
+
+		char c = io::Stream::Eof;
+		read(&c, 1);
+		return c;
+	}
+
+	void read(char* buffer, std::size_t size)
+	{
+		if(size > 0)
+		{
+			if(m_peek.has_value())
+			{
+				*buffer = m_peek.value();
+				m_peek.reset();
+				++buffer;
+				--size;
+			}
+
+			m_stream.read(buffer, size);
+		}
+	}
+
+private:
+	io::Stream&         m_stream;
+	std::optional<char> m_peek;
+};
+
+/*
+ * Connection
+ */
+
+struct Connection::MessageHeader{
+	std::size_t contentLength = 0;
+	std::string contentType   = "application/vscode-jsonrpc; charset=utf-8";
+};
+
+Connection::Connection(io::Stream& stream)
+	: m_stream{stream}
+{
+}
+
+json::Any Connection::readMessage()
+{
 	try
 	{
+		std::lock_guard lock{m_readMutex};
+		InputReader reader{m_stream};
+
+		if(reader.peek() == io::Stream::Eof)
+			throw ConnectionError{"Connection lost"};
+
+		const auto header = readMessageHeader(reader);
+
+		std::string content;
+		content.resize(header.contentLength);
+		reader.read(&content[0], static_cast<std::streamsize>(header.contentLength));
+
+		// Verify only after reading the entire message so no partially unread message is left in the stream
+		verifyContentType(header.contentType);
+
 		auto json = json::parse(content);
 #if LSP_MESSAGE_DEBUG_LOG
 		debugLogMessageJson("incoming", json);
 #endif
 
-		if(json.isObject())
-		{
-			auto message = jsonrpc::messageFromJson(std::move(json.object()));
-
-			if(std::holds_alternative<jsonrpc::Request>(message))
-				requestHandler.onRequest(std::move(std::get<jsonrpc::Request>(message)));
-			else
-				responseHandler.onResponse(std::move(std::get<jsonrpc::Response>(message)));
-		}
-		else if(json.isArray())
-		{
-			auto batch = jsonrpc::messageBatchFromJson(std::move(json.array()));
-
-			if(std::holds_alternative<jsonrpc::RequestBatch>(batch))
-				requestHandler.onRequestBatch(std::move(std::get<jsonrpc::RequestBatch>(batch)));
-			else
-				responseHandler.onResponseBatch(std::move(std::get<jsonrpc::ResponseBatch>(batch)));
-		}
+		return json;
+	}
+	catch(const ConnectionError&)
+	{
+		throw;
+	}
+	catch(const json::ParseError&)
+	{
+		throw;
 	}
 	catch(const std::exception& e)
 	{
 		throw ConnectionError{e.what()};
 	}
+	catch(...)
+	{
+		throw ConnectionError{"Unknown error"};
+	}
 }
 
-void Connection::sendRequest(jsonrpc::Request&& request)
+void Connection::writeMessage(const json::Any& content)
 {
-	writeJsonMessage(jsonrpc::requestToJson(std::move(request)));
+	try
+	{
+#if LSP_MESSAGE_DEBUG_LOG
+		debugLogMessageJson("outgoing", content);
+#endif
+		writeMessageData(json::stringify(content));
+	}
+	catch(const ConnectionError&)
+	{
+		throw;
+	}
+	catch(const std::exception& e)
+	{
+		throw ConnectionError{e.what()};
+	}
+	catch(...)
+	{
+		throw ConnectionError{"Unknown error"};
+	}
 }
 
-void Connection::sendResponse(jsonrpc::Response&& response)
-{
-	writeJsonMessage(jsonrpc::responseToJson(std::move(response)));
-}
-
-void Connection::sendRequestBatch(jsonrpc::RequestBatch&& batch)
-{
-	writeJsonMessage(jsonrpc::requestBatchToJson(std::move(batch)));
-}
-
-void Connection::sendResponseBatch(jsonrpc::ResponseBatch&& batch)
-{
-	writeJsonMessage(jsonrpc::responseBatchToJson(std::move(batch)));
-}
-
-Connection::MessageHeader Connection::readMessageHeader()
+Connection::MessageHeader Connection::readMessageHeader(InputReader& reader)
 {
 	MessageHeader header;
 
-	while(m_in.peek() != '\r')
-		readNextMessageHeaderField(header);
+	while(reader.peek() != '\r')
+		readNextMessageHeaderField(header, reader);
 
-	m_in.get(); // \r
-
-	if(m_in.peek() != '\n')
-		throw ProtocolError{"Invalid message header format"};
-
-	m_in.get(); // \n
+	if(reader.get() != '\r' || reader.get() != '\n')
+		throw ConnectionError("Protocol: Expected header to be terminated by '\\r\\n'");
 
 	return header;
 }
 
-void Connection::readNextMessageHeaderField(MessageHeader& header)
+void Connection::readNextMessageHeaderField(MessageHeader& header, InputReader& reader)
 {
-	if(m_in.peek() == std::char_traits<char>::eof())
+	if(reader.peek() == std::char_traits<char>::eof())
 		throw ConnectionError{"Connection lost"};
 
 	std::string lineData;
-	std::getline(m_in, lineData); // This also consumes the newline so it's only necessary to check for one \r\n before the content
+
+	while(reader.peek() != '\r')
+	{
+		const auto c = reader.get();
+
+		if(c == '\n')
+			throw ConnectionError("Protocol: Unexpected '\\n' in header field, expected '\\r\\n'");
+
+		lineData.push_back(c);
+	}
 
 	std::string_view line{lineData};
 	const auto separatorIdx = line.find(':');
 
 	if(separatorIdx != std::string_view::npos)
 	{
-		const auto key   = str::trimView(line.substr(0, separatorIdx));
-		const auto value = str::trimView(line.substr(separatorIdx + 1));
+		const auto key   = trimStringView(line.substr(0, separatorIdx));
+		const auto value = trimStringView(line.substr(separatorIdx + 1));
 
 		if(key == "Content-Length")
 			std::from_chars(value.data(), value.data() + value.size(), header.contentLength);
 		else if(key == "Content-Type")
 			header.contentType = std::string{value.data(), value.size()};
 	}
+
+	if(reader.get() != '\r' || reader.get() != '\n')
+		throw ConnectionError("Protocol: Expected header field to be terminated by '\\r\\n'");
 }
 
-void Connection::writeJsonMessage(const json::Any& content)
-{
-#if LSP_MESSAGE_DEBUG_LOG
-	debugLogMessageJson("outgoing", content);
-#endif
-	writeMessage(json::stringify(content));
-}
-
-void Connection::writeMessage(const std::string& content)
+void Connection::writeMessageData(const std::string& content)
 {
 	std::lock_guard lock{m_writeMutex};
 	MessageHeader header{content.size()};
-	writeMessageHeader(header);
-	m_out.write(content.data(), static_cast<std::streamsize>(content.size()));
-	m_out.flush();
+	const auto messageStr = messageHeaderString(header) + content;
+	m_stream.write(messageStr.data(), static_cast<std::streamsize>(messageStr.size()));
 }
 
-void Connection::writeMessageHeader(const MessageHeader& header)
+std::string Connection::messageHeaderString(const MessageHeader& header)
 {
-	const auto headerStr = "Content-Length: " + std::to_string(header.contentLength) + "\r\n\r\n";
-	m_out.write(headerStr.data(), static_cast<std::streamsize>(headerStr.length()));
+	return "Content-Length: " + std::to_string(header.contentLength) + "\r\n" +
+	       "Content-Type: " + header.contentType + "\r\n\r\n";
 }
 
 } // namespace lsp

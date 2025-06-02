@@ -15,19 +15,15 @@ local function emit_lspgen_postbuildcommands()
   -- You can't just switch on OS, MSYS2 has os=windows and gmake uses sh
   if _ACTION and _ACTION:match("gmake.*") then
     postbuildcommands {
-      "%[build/lspgen/" .. configpath .. "/lspgen] %[lspgen/lspmetamodel.json]",
+      "%[build/lspgen/" .. configpath .. "/lspgen] %[lspgen/metaModel.json]",
       "mkdir -p %[build/lspframework/generated/lsp]",
-      "cp -f %[build/lspgen/messages.cpp] %[build/lspframework/generated/lsp/messages.cpp]",
-      "cp -f %[build/lspgen/messages.h] %[build/lspframework/generated/lsp/messages.h]",
       "cp -f %[build/lspgen/types.cpp] %[build/lspframework/generated/lsp/types.cpp]",
       "cp -f %[build/lspgen/types.h] %[build/lspframework/generated/lsp/types.h]"
     }
   else
     postbuildcommands {
-      "%[build/lspgen/" .. configpath .. "/lspgen] %[lspgen/lspmetamodel.json]",
+      "%[build/lspgen/" .. configpath .. "/lspgen] %[lspgen/metaModel.json]",
       "{MKDIR} %[build/lspframework/generated/lsp]",
-      "{COPYFILE} %[build/lspgen/messages.cpp] %[build/lspframework/generated/lsp/messages.cpp]",
-      "{COPYFILE} %[build/lspgen/messages.h] %[build/lspframework/generated/lsp/messages.h]",
       "{COPYFILE} %[build/lspgen/types.cpp] %[build/lspframework/generated/lsp/types.cpp]",
       "{COPYFILE} %[build/lspgen/types.h] %[build/lspframework/generated/lsp/types.h]"
     }
@@ -45,6 +41,9 @@ local function cxxflags()
 
   filter "toolset:msc"
     buildoptions { "/W4", "/bigobj" }
+
+  filter "system:windows"
+    defines "_CRT_SECURE_NO_WARNINGS"
 
   filter { "system:windows", "toolset:gcc or clang" }
     buildoptions { "-Wa,-mbig-obj" }
@@ -71,18 +70,14 @@ project "lspgen"
 
   includedirs "."
   files {
-    "lspgen/lspmetamodel.json",
+    "lspgen/metaModel.json",
     "lspgen/lspgen.cpp",
     "lsp/json/json.cpp",
     "lsp/json/json.h",
-    "lsp/str.cpp",
-    "lsp/str.h"
   }
 
-  buildinputs  { "lspgen/lspmetamodel.json" }
+  buildinputs  { "lspgen/metaModel.json" }
   buildoutputs {
-    "build/lspframework/generated/lsp/messages.cpp",
-    "build/lspframework/generated/lsp/messages.h",
     "build/lspframework/generated/lsp/types.cpp",
     "build/lspframework/generated/lsp/types.h"
   }
@@ -106,8 +101,6 @@ project "lspframework"
   files {
     "lsp/**.cpp",
     "lsp/**.h",
-    "%{prj.location}/generated/lsp/messages.cpp",
-    "%{prj.location}/generated/lsp/messages.h",
     "%{prj.location}/generated/lsp/types.cpp",
     "%{prj.location}/generated/lsp/types.h"
   }
