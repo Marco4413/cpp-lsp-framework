@@ -17,6 +17,7 @@ local function emit_lspgen_postbuildcommands()
     postbuildcommands {
       "%[build/lspgen/" .. configpath .. "/lspgen] %[lspgen/metaModel.json]",
       "mkdir -p %[build/lspframework/generated/lsp]",
+      "cp -f %[build/lspgen/messages.h] %[build/lspframework/generated/lsp/messages.h]",
       "cp -f %[build/lspgen/types.cpp] %[build/lspframework/generated/lsp/types.cpp]",
       "cp -f %[build/lspgen/types.h] %[build/lspframework/generated/lsp/types.h]"
     }
@@ -24,6 +25,7 @@ local function emit_lspgen_postbuildcommands()
     postbuildcommands {
       "%[build/lspgen/" .. configpath .. "/lspgen] %[lspgen/metaModel.json]",
       "{MKDIR} %[build/lspframework/generated/lsp]",
+      "{COPYFILE} %[build/lspgen/messages.h] %[build/lspframework/generated/lsp/messages.h]",
       "{COPYFILE} %[build/lspgen/types.cpp] %[build/lspframework/generated/lsp/types.cpp]",
       "{COPYFILE} %[build/lspgen/types.h] %[build/lspframework/generated/lsp/types.h]"
     }
@@ -78,6 +80,7 @@ project "lspgen"
 
   buildinputs  { "lspgen/metaModel.json" }
   buildoutputs {
+    "build/lspframework/generated/lsp/messages.h",
     "build/lspframework/generated/lsp/types.cpp",
     "build/lspframework/generated/lsp/types.h"
   }
@@ -101,6 +104,7 @@ project "lspframework"
   files {
     "lsp/**.cpp",
     "lsp/**.h",
+    "%{prj.location}/generated/lsp/messages.h",
     "%{prj.location}/generated/lsp/types.cpp",
     "%{prj.location}/generated/lsp/types.h"
   }
