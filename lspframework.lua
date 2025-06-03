@@ -109,4 +109,7 @@ project "lspframework"
     "%{prj.location}/generated/lsp/types.h"
   }
 
+  filter "system:windows"
+    links "ws2_32"
+
   cxxflags()
