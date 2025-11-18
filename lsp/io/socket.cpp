@@ -5,6 +5,7 @@
 #include <cassert>
 
 #ifdef LSP_SOCKET_POSIX
+#include <cerrno>
 #include <netdb.h>
 #include <unistd.h>
 #include <sys/types.h>
@@ -20,6 +21,10 @@
 #endif
 
 namespace lsp::io{
+
+/*
+ * Socket::Impl
+ */
 
 struct Socket::Impl{
 	static constexpr auto InvalidSocket =
@@ -37,7 +42,7 @@ struct Socket::Impl{
 
 	using SizeType =
 #ifdef LSP_SOCKET_POSIX
-		std::size_t;
+		socklen_t;
 #elif defined(LSP_SOCKET_WIN32)
 		int;
 #endif
@@ -88,7 +93,7 @@ struct Socket::Impl{
 	{
 		const auto errorCode =
 #ifdef LSP_SOCKET_POSIX
-		 errno;
+		errno;
 #elif defined(LSP_SOCKET_WIN32)
 		WSAGetLastError();
 #endif
@@ -236,7 +241,6 @@ Socket Socket::connect(const std::string& address, unsigned short port)
 {
 	return Socket(Impl::connect(address, port));
 }
-
 
 bool Socket::isOpen() const
 {

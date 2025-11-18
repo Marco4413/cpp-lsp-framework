@@ -2,14 +2,6 @@
 
 This is an implementation of the [Language Server Protocol](https://microsoft.github.io/language-server-protocol/overviews/lsp/overview/) in C++. It can be used to implement both servers and clients that communicate using the LSP.
 
-## Building
-
-There aren't any external dependencies except for `cmake` and a compiler that supports C++20.
-
-The project is built as a static library. LSP type definitions, messages and serialization boilerplate are generated from the official [meta model](https://github.com/microsoft/language-server-protocol/blob/gh-pages/_specifications/lsp/3.17/metaModel/metaModel.json) during the build.
-
-`cmake -S . -B build && cmake --build build --parallel`
-
 ## Overview
 
 The goal of this library is to make implementing LSP servers and clients easy and type safe.
@@ -17,9 +9,46 @@ All LSP types and messages are proper C++ structs. There's no need to manually r
 
 All messages can be found in the generated `<lsp/messages.h>` header with requests inside the `lsp::requests` and notifications inside the `lsp::notifications` namespace respectively. All types like the message parameters or results can be found in `<lsp/types.h>`.
 
-## Usage
+## Building And Linking
 
-First you need to establish a connection to the client or server you want to communicate with. The library provides communication via `stdio` and sockets. If you need another way of communicating with the other process (e.g. named pipes) you can extend `lsp::io::Stream` and implement the `read` and `write` methods.
+There aren't any external dependencies except for `cmake` and a compiler that supports C++20.
+
+The project is built as a static library. LSP type definitions, messages and serialization boilerplate are generated from the official [meta model](https://github.com/microsoft/language-server-protocol/blob/gh-pages/_specifications/lsp/3.17/metaModel/metaModel.json) during the build.
+
+`cmake -S . -B build && cmake --build build --parallel`
+
+If you use `lsp` as an external dependency, make sure the cmake config option `LSP_INSTALL` is enabled. Then install the `lsp` target:
+
+`cmake --build build --target install`
+
+In your project, you can link it by using `find_package`, like:
+
+```cmake
+find_package(lsp 1.3.0 EXACT REQUIRED)
+target_link_library(${CURRENT_TARGET} PUBLIC lsp::lsp)
+```
+
+## Examples
+
+An example server and client implementation can be found in [lsp-framework/examples](./examples/).
+
+They aren't built by default unless the cmake option `LSP_BUILD_EXAMPLES` is enabled.
+
+### Client
+
+Launch with `LspClientExample --exe=<server_executable> <args>` to start the given server executable with optional arguments and use it via stdio.
+
+Alternatively `LspClientExample --port=<portnum>` to connect to an already launched server instance that is listening on the given port.
+
+### Server
+
+The server example can be launched with `LspServerExample --port=<portnum>` to start a server instance that listens on the given port for incoming client connections.
+
+Without arguments it will wait for input on stdin.
+
+## Basic Usage
+
+First you need to establish a connection to the client or server you want to communicate with. The library provides communication via stdio and sockets. If you need another way of communicating with the other process (e.g. named pipes) you can extend `lsp::io::Stream` and implement the `read` and `write` methods.
 
 Create an `lsp::Connection` using a stream and then an `lsp::MessageHandler` with the connection:
 
@@ -68,6 +97,10 @@ The callback returns the result of the request (`MessageType::Result`) if it has
 
 The id of the current request can be obtained using `lsp::MessageHandler::currentRequestId`. However, this function can only be called from inside of a request callback. Otherwise a `std::logic_error` is thrown.
 
+It is also possible to send messages that do not have a generated c++ type. This option is not type-safe but allows for sending custom notifications and requests that are not part of the specification or are not yet contained in the meta model used for generating the code.
+
+In order to send these types of generic messages you need to call the non-template overload of `MessageHandler::add` which takes the message method string and a callback function that is invoked with the request payload and returns the response. Both are of type `lsp::json::Any`. There is an async overload as well that expects the result of the callback to be `std::future<lsp::json::Any>`.
+
 `MessageHandler::add` returns a reference to the handler itself in order to easily chain multiple callback registrations without repeating the handler instance over and over:
 
 ```cpp
@@ -103,12 +136,14 @@ messageHandler.add<lsp::requests::TextDocument_Hover>(
     }
 ```
 
+Notification callbacks can also be executed asynchronously. They must return a `std::future<void>`.
+
 ### Returning Error Responses
 
 If an error occurs while processing the request and no proper result can be provided an error response should be sent back. In order to do that simply throw an `lsp::RequestError` from inside of the callback (`#include <lsp/error.h>`):
 
 ```cpp
-throw lsp::RequestError(lsp::Error::InvalidParams, "Invalid parameters received");
+throw lsp::RequestError(lsp::MessageError::InvalidParams, "Invalid parameters received");
 ```
 
 ### Sending Requests
@@ -140,6 +175,8 @@ auto messageId = messageHandler.sendRequest<lsp::requests::TextDocument_Diagnost
 ```
 
 `lsp::MessageHandler::currentRequestId` can be called from inside such a callback to obtain the id of the request.
+
+Just like with handling requests it is also possible to send generic json messages using the non-template overloads of `MessageHandler::sendRequest`.
 
 ### Sending Notifications
 

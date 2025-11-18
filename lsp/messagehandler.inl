@@ -27,7 +27,7 @@ jsonrpc::Response MessageHandler::createResponseFromAsyncResult(const MessageId&
 	}
 	catch(std::exception& e)
 	{
-		return jsonrpc::createErrorResponse(id, Error::InternalError, e.what());
+		return jsonrpc::createErrorResponse(id, MessageError::InternalError, e.what());
 	}
 }
 
@@ -51,11 +51,11 @@ MessageHandler& MessageHandler::add(F&& handlerFunc) requires IsRequestCallback<
 
 			if(allowAsync)
 			{
-				m_threadPool.addTask([this, id = id](AsyncRequestResult<M>&& result) mutable
+				m_threadPool.addTask([this, id = id, future = std::move(future)]() mutable
 				{
-					auto response = createResponseFromAsyncResult<M>(id, result);
+					auto response = createResponseFromAsyncResult<M>(id, future);
 					sendResponse(std::move(response));
-				}, std::move(future));
+				});
 
 				return std::nullopt;
 			}
@@ -83,7 +83,7 @@ MessageHandler& MessageHandler::add(F&& handlerFunc) requires IsNoParamsRequestC
 
 		if constexpr(IsNoParamsCallbackResult<AsyncRequestResult<M>, F>)
 		{
-			auto future = f(id);
+			auto future = f();
 
 			if(allowAsync)
 			{
@@ -113,11 +113,34 @@ template<typename M, typename F>
 MessageHandler& MessageHandler::add(F&& handlerFunc) requires IsNotificationCallback<M, F>
 {
 	addHandler(M::Method,
-	[f = std::forward<F>(handlerFunc)](json::Any&& json, bool) -> OptionalResponse
+	[this, f = std::forward<F>(handlerFunc)](json::Any&& json, bool allowAsync) -> OptionalResponse
 	{
 		typename M::Params params;
 		fromJson(std::move(json), params);
-		f(std::move(params));
+
+		if constexpr(IsCallbackResult<AsyncNotificationResult, typename M::Params, F>)
+		{
+			auto future = f(std::move(params));
+
+			if(allowAsync)
+			{
+				m_threadPool.addTask([result = std::move(future)]() mutable
+				{
+					result.get();
+				});
+			}
+			else
+			{
+				future.get();
+			}
+		}
+		else
+		{
+			(void)this;
+			(void)allowAsync;
+			f(std::move(params));
+		}
+
 		return std::nullopt;
 	});
 
@@ -128,9 +151,31 @@ template<typename M, typename F>
 MessageHandler& MessageHandler::add(F&& handlerFunc) requires IsNoParamsNotificationCallback<M, F>
 {
 	addHandler(M::Method,
-	[f = std::forward<F>(handlerFunc)](json::Any&&, bool) -> OptionalResponse
+	[this, f = std::forward<F>(handlerFunc)](json::Any&&, bool allowAsync) -> OptionalResponse
 	{
-		f();
+		if constexpr(IsNoParamsCallbackResult<AsyncNotificationResult, F>)
+		{
+			auto future = f();
+
+			if(allowAsync)
+			{
+				m_threadPool.addTask([result = std::move(future)]() mutable
+				{
+					result.get();
+				});
+			}
+			else
+			{
+				future.get();
+			}
+		}
+		else
+		{
+			(void)this;
+			(void)allowAsync;
+			f();
+		}
+
 		return std::nullopt;
 	});
 
@@ -196,15 +241,22 @@ void MessageHandler::sendNotification() requires SendNoParamsNotification<M>
 template<typename T>
 void MessageHandler::FutureRequestResult<T>::setValueFromJson(json::Any&& json)
 {
-	T value{};
-	fromJson(std::move(json), value);
-	m_promise.set_value(std::move(value));
+	try
+	{
+		auto value = T();
+		fromJson(std::move(json), value);
+		m_promise.set_value(std::move(value));
+	}
+	catch(const Exception& e)
+	{
+		m_promise.set_exception(std::make_exception_ptr(e));
+	}
 }
 
 template<typename T>
-void MessageHandler::FutureRequestResult<T>::setException(std::exception_ptr e)
+void MessageHandler::FutureRequestResult<T>::setError(ResponseError&& error)
 {
-	m_promise.set_exception(e);
+	m_promise.set_exception(std::make_exception_ptr(std::move(error)));
 }
 
 /*
@@ -214,22 +266,22 @@ void MessageHandler::FutureRequestResult<T>::setException(std::exception_ptr e)
 template<typename T, typename F, typename E>
 void MessageHandler::CallbackRequestResult<T, F, E>::setValueFromJson(json::Any&& json)
 {
-	T value{};
-	fromJson(std::move(json), value);
-	m_then(std::move(value));
+	try
+	{
+		auto value = T();
+		fromJson(std::move(json), value);
+		m_then(std::move(value));
+	}
+	catch(const json::Error& error)
+	{
+		m_error(ResponseError(MessageError::ParseError, error.what()));
+	}
 }
 
 template<typename T, typename F, typename E>
-void MessageHandler::CallbackRequestResult<T, F, E>::setException(std::exception_ptr e)
+void MessageHandler::CallbackRequestResult<T, F, E>::setError(ResponseError&& error)
 {
-	try
-	{
-		std::rethrow_exception(e);
-	}
-	catch(ResponseError& error)
-	{
-		m_error(error);
-	}
+	m_error(std::move(error));
 }
 
 } // namespace lsp

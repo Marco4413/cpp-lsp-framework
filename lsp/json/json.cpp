@@ -1,9 +1,10 @@
-#include <limits>
-#include <vector>
-#include <cassert>
-#include <string>
-#include <charconv>
 #include <algorithm>
+#include <cassert>
+#include <charconv>
+#include <iterator>
+#include <limits>
+#include <string>
+#include <vector>
 #include <lsp/json/json.h>
 
 namespace lsp::json{
@@ -17,11 +18,6 @@ constexpr std::string_view FalseValueString{"false"};
  * Parser
  */
 
-std::size_t textOffset(const char* start, const char* pos)
-{
-	return static_cast<std::size_t>(std::distance(start, pos));
-}
-
 class Parser{
 public:
 	Parser(std::string_view text) :
@@ -30,6 +26,21 @@ public:
 		m_pos{m_start}
 	{
 		m_stateStack.reserve(10);
+	}
+
+	bool atEnd() const
+	{
+		return m_pos >= m_end;
+	}
+
+	std::size_t textOffset(const char* pos) const
+	{
+		return static_cast<std::size_t>(std::distance(m_start, pos));
+	}
+
+	std::size_t currentTextOffset() const
+	{
+		return textOffset(m_pos);
 	}
 
 	Any parse()
@@ -42,8 +53,8 @@ public:
 		{
 			skipWhitespace();
 
-			if(m_pos >= m_end)
-				throw ParseError{"Unexpected end of input", textOffset(m_start, m_pos)};
+			if(atEnd())
+				throw ParseError{"Unexpected end of input", currentTextOffset()};
 
 			switch(currentState())
 			{
@@ -61,6 +72,11 @@ public:
 				break;
 			}
 		}
+
+		skipWhitespace();
+
+		if(!atEnd())
+			throw ParseError{"Trailing characters in json", currentTextOffset()};
 
 		return result;
 	}
@@ -127,14 +143,14 @@ private:
 			if(!currentValue().object().empty())
 			{
 				if(*m_pos != ',')
-					throw ParseError{"Expected ','", textOffset(m_start, m_pos)};
+					throw ParseError{"Expected ','", currentTextOffset()};
 
 				const char* pos = m_pos;
 				++m_pos;
 				skipWhitespace();
 
-				if(m_pos < m_end && *m_pos == '}')
-					throw ParseError{"Trailing ','", textOffset(m_start, pos)};
+				if(!atEnd() && *m_pos == '}')
+					throw ParseError{"Trailing ','", textOffset(pos)};
 			}
 
 			pushState(State::ObjectKey, currentValue());
@@ -150,12 +166,12 @@ private:
 		const auto  key    = parseString();
 
 		if(object.contains(key))
-			throw ParseError{"Duplicate key '" + key + "'", textOffset(m_start, keyPos)};
+			throw ParseError{"Duplicate key '" + key + "'", textOffset(keyPos)};
 
 		skipWhitespace();
 
-		if(m_pos < m_end && *m_pos != ':')
-			throw ParseError{"Expected ':'", textOffset(m_start, m_pos)};
+		if(!atEnd() && *m_pos != ':')
+			throw ParseError{"Expected ':'", currentTextOffset()};
 
 		++m_pos;
 
@@ -180,14 +196,14 @@ private:
 			if(!array.empty())
 			{
 				if(*m_pos != ',')
-					throw ParseError{"Expected ','", textOffset(m_start, m_pos)};
+					throw ParseError{"Expected ','", currentTextOffset()};
 
 				const char* pos = m_pos;
 				++m_pos;
 				skipWhitespace();
 
-				if(m_pos < m_end && *m_pos == ']')
-					throw ParseError{"Trailing ','", textOffset(m_start, pos)};
+				if(!atEnd() && *m_pos == ']')
+					throw ParseError{"Trailing ','", textOffset(pos)};
 			}
 
 			pushState(State::Value, array.emplace_back());
@@ -219,29 +235,29 @@ private:
 
 	void skipWhitespace()
 	{
-		while(m_pos < m_end && std::isspace(*m_pos))
+		while(!atEnd() && std::isspace(static_cast<unsigned char>(*m_pos)))
 			++m_pos;
 	}
 
 	String parseString()
 	{
-		if(m_pos >= m_end || *m_pos != '\"')
-			throw ParseError{"String expected", textOffset(m_start, m_pos)};
+		if(atEnd() || *m_pos != '\"')
+			throw ParseError{"String expected", currentTextOffset()};
 
 		const char* stringStart = m_pos++;
 
 		bool escaping = false;
 		while(*m_pos != '\"' || escaping)
 		{
-			if (!escaping && *m_pos == '\\')
+			if(!escaping && *m_pos == '\\')
 				escaping = true;
 			else // Already escaping or no '\'
 				escaping = false;
 
 			++m_pos;
 
-			if(m_pos >= m_end || *m_pos == '\n')
-				throw ParseError{"Unmatched '\"'", textOffset(m_start, m_pos)};
+			if(atEnd() || *m_pos == '\n')
+				throw ParseError{"Unmatched '\"'", currentTextOffset()};
 		}
 
 		const char* stringEnd = ++m_pos;
@@ -254,7 +270,13 @@ private:
 		const char* numberStart = m_pos;
 		bool isDecimal = false;
 
-		while(m_pos < m_end && (std::isalnum(*m_pos) || *m_pos == '-' || *m_pos == '.' || *m_pos == 'e' || *m_pos == 'E'))
+		while(!atEnd() && (
+		      std::isalnum(static_cast<unsigned char>(*m_pos)) ||
+		      *m_pos == '-' ||
+		      *m_pos == '.' ||
+		      *m_pos == 'e' ||
+		      *m_pos == 'E')
+		)
 		{
 			if(!isDecimal && (*m_pos == '.' || *m_pos == 'e' || *m_pos == 'E'))
 				isDecimal = true;
@@ -268,7 +290,7 @@ private:
 			const Decimal decimal = std::stod(std::string{numberStart, m_pos}, &idx);
 
 			if(idx < static_cast<std::size_t>(std::distance(numberStart, m_pos)))
-				throw ParseError{"Invalid number value: '" + std::string{numberStart, m_pos} + "'", textOffset(m_start, numberStart)};
+				throw ParseError{"Invalid number value: '" + std::string{numberStart, m_pos} + "'", textOffset(numberStart)};
 
 			return decimal;
 		}
@@ -277,7 +299,7 @@ private:
 		const auto [ptr, ec] = std::from_chars(numberStart, m_pos, intValue);
 
 		if(ec != std::errc{} || ptr != m_pos)
-			throw ParseError{"Invalid number value: '" + std::string{numberStart, m_pos} + "'", textOffset(m_start, numberStart)};
+			throw ParseError{"Invalid number value: '" + std::string{numberStart, m_pos} + "'", textOffset(numberStart)};
 
 		if(intValue < std::numeric_limits<json::Integer>::min() || intValue > std::numeric_limits<json::Integer>::max())
 			return static_cast<json::Decimal>(intValue);
@@ -289,7 +311,7 @@ private:
 	{
 		const char* idStart = m_pos;
 
-		while(m_pos < m_end && std::isalnum(*m_pos))
+		while(!atEnd() && std::isalnum(static_cast<unsigned char>(*m_pos)))
 			++m_pos;
 
 		auto identifier = std::string_view(idStart, m_pos);
@@ -303,7 +325,7 @@ private:
 		if(identifier == NullValueString)
 			return Null();
 
-		throw ParseError{"Unexpected '" + std::string(identifier) + "'", textOffset(m_start, m_pos)};
+		throw ParseError{"Unexpected '" + std::string(identifier) + "'", currentTextOffset()};
 	}
 
 	Any parseSimpleValue()
@@ -311,13 +333,13 @@ private:
 		if(*m_pos == '\"')
 			return parseString();
 
-		if(std::isdigit(*m_pos) || *m_pos == '-')
+		if(std::isdigit(static_cast<unsigned char>(*m_pos)) || *m_pos == '-')
 			return parseNumber();
 
-		if(std::isalpha(*m_pos))
+		if(std::isalpha(static_cast<unsigned char>(*m_pos)))
 			return parseIdentifier();
 
-		throw ParseError{"Unexpected token", textOffset(m_start, m_pos)};
+		throw ParseError{"Unexpected token", currentTextOffset()};
 	}
 };
 
@@ -436,6 +458,36 @@ void stringifyImplementation(const Any& json, std::string& str, std::size_t inde
 		}
 
 		str += ']';
+	}
+}
+
+void appendCodePointAsUtf8(std::string& str, unsigned int codepoint)
+{
+	if(codepoint < 0x80)
+	{
+		str += static_cast<char>(codepoint);
+	}
+	else if(codepoint < 0x800)
+	{
+		str += static_cast<char>(0xC0 | ((codepoint >> 6) & 0x1F));
+		str += static_cast<char>(0x80 | (codepoint & 0x3F));
+	}
+	else if(codepoint < 0x10000)
+	{
+		str += static_cast<char>(0xE0 | ((codepoint >> 12) & 0xF));
+		str += static_cast<char>(0x80 | ((codepoint >> 6) & 0x3F));
+		str += static_cast<char>(0x80 | (codepoint & 0x3F));
+	}
+	else if(codepoint < 0x200000)
+	{
+		str += static_cast<char>(0xF0 | ((codepoint >> 18) & 0x7));
+		str += static_cast<char>(0x80 | ((codepoint >> 12) & 0x3F));
+		str += static_cast<char>(0x80 | ((codepoint >> 6) & 0x3F));
+		str += static_cast<char>(0x80 | (codepoint & 0x3F));
+	}
+	else
+	{
+		str += "?";
 	}
 }
 
@@ -563,6 +615,38 @@ std::string fromStringLiteral(std::string_view str)
 			case 'r':
 				result += '\r';
 				break;
+			case 'u':
+				{
+					const auto* first = str.data() + i + 1;
+					const auto* last  = first + 4;
+
+					if(last <= str.data() + str.size())
+					{
+						unsigned int codepoint;
+						const auto [ptr, ec] = std::from_chars(first, last, codepoint, 16);
+
+						if(ec == std::errc{} && ptr == last)
+						{
+							appendCodePointAsUtf8(result, codepoint);
+							i += 4;
+						}
+						else
+						{
+							const auto len = static_cast<std::size_t>(std::distance(first, ptr));
+							result += "\\u";
+							result += std::string_view(first, len);
+							i += len;
+						}
+					}
+					else
+					{
+						const auto len = static_cast<std::size_t>(std::distance(first, str.data() + str.size()));
+						result += "\\u";
+						result += std::string_view(first, len);
+						i += len;
+					}
+					break;
+				}
 			default:
 				result += str[i];
 			}

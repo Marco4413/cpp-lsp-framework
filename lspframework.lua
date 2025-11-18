@@ -33,8 +33,18 @@ local function emit_lspgen_postbuildcommands()
 end
 
 local function cxxflags()
-  filter "toolset:gcc or clang"
-    buildoptions { "-Wall", "-Wextra", "-Wpedantic" }
+  filter "toolset:gcc"
+    buildoptions {
+      "-Wall", "-Wextra", "-Wpedantic",
+      "-Wsign-conversion", "-Wfloat-conversion",
+    }
+
+  filter "toolset:clang"
+    buildoptions {
+      "-Wall", "-Wextra", "-Wpedantic",
+      "-Wsign-conversion", "-Wint-conversion", "-Wfloat-conversion",
+      "-Wimplicit-int-conversion", "-Wimplicit-float-conversion",
+    }
 
   filter "action:vs*"
     warnings "Extra"

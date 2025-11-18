@@ -14,10 +14,12 @@ struct EnumerationTypeHelper<std::string>{
 	using ConstInitType = std::string_view;
 };
 
-template<typename EnumType, typename ValueType>
+template<typename EnumType, typename ValueT>
 class Enumeration{
-	using ConstInitType = typename EnumerationTypeHelper<ValueType>::ConstInitType;
 public:
+	using ValueType     = ValueT;
+	using ConstInitType = typename EnumerationTypeHelper<ValueType>::ConstInitType;
+
 	Enumeration() = default;
 	Enumeration(EnumType index) : m_index{index}{}
 	explicit Enumeration(ValueType&& value){ *this = value; }
@@ -47,6 +49,7 @@ public:
 	bool operator==(EnumType other) const{ return m_index == other; }
 	bool operator==(ConstInitType other) const{ return value() == other; }
 	operator ValueType() const{ return value(); }
+	operator EnumType() const{ return index(); }
 	bool hasCustomValue() const{ return m_index == EnumType::MAX_VALUE; }
 	EnumType index() const{ return m_index; }
 
@@ -67,7 +70,7 @@ private:
 	EnumType  m_index       = EnumType::MAX_VALUE;
 	ValueType m_customValue = {};
 
-	static const ConstInitType s_values[static_cast<int>(EnumType::MAX_VALUE)];
+	static const ConstInitType s_values[static_cast<std::size_t>(EnumType::MAX_VALUE)];
 };
 
 template<typename EnumType, typename ValueType>
